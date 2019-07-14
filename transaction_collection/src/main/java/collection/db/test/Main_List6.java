@@ -7,7 +7,7 @@ import collection.db.TransactionalTable;
 import collection.db.TransactionalTable.ReadWriteCursor;
 import collection.db.TransactionalTable.SnapshotCursor;
 
-public class Main_List2 {
+public class Main_List6 {
 
 	/*
 	 * Test two writes against the same record...
@@ -21,25 +21,26 @@ public class Main_List2 {
 		person0.setAge(50);
 		personList.add(person0);
 
-		TransactionalTable<Person> dbList = new TransactionalTable<Person>(personList);
+		TransactionalTable<Person> transactionalTable = new TransactionalTable<Person>(personList);
 		
-		SnapshotCursor<Person> iteratorForRead = dbList.createSnapshotCursor();
+		SnapshotCursor<Person> iteratorForRead = transactionalTable.createSnapshotCursor();
 		while ( iteratorForRead.next() ) {
 			Person person = iteratorForRead.get();
 			System.out.println(person);
 		}
 		
-		Thread thread = new Thread(new Runnable1(dbList), "Thread-1");
-		Thread thread2 = new Thread(new Runnable2(dbList), "Thread-2");
+		Thread thread = new Thread(new Runnable1(transactionalTable), "Thread-1");
+		Thread thread2 = new Thread(new Runnable2(transactionalTable), "Thread-2");
 		
 		thread.start();
+		Thread.sleep(1000);
 		thread2.start();
 
 		thread.join();
 		thread2.join();
 		
 		System.out.println("------------- dump all --------------");
-		dbList.dump();
+		transactionalTable.dump();
 
 		
 		System.out.println("Done.................");
@@ -47,14 +48,14 @@ public class Main_List2 {
 	
 	static class Runnable1 implements Runnable {
 		
-		TransactionalTable<Person> dbList;		
-		Runnable1(TransactionalTable<Person> dbList) {
-			this.dbList = dbList;
+		TransactionalTable<Person> transactionalTable;		
+		Runnable1(TransactionalTable<Person> transactionalTable) {
+			this.transactionalTable = transactionalTable;
 		}
 		
 		public void run() {
 
-			ReadWriteCursor<Person> iteratorForUpdate = dbList.createReadWriteCursor();
+			ReadWriteCursor<Person> iteratorForUpdate = transactionalTable.createReadWriteCursor();
 			if ( iteratorForUpdate.next() ) {
 				System.out.println(Thread.currentThread().getName() + " Is processing");
 				Person person = iteratorForUpdate.get();
@@ -66,8 +67,14 @@ public class Main_List2 {
 				try {
 					Thread.sleep(2000);
 				} catch (Exception e) {}
+				
+				Person personAdd = new Person();
+				personAdd.setName("Amar");
+				personAdd.setAge(43);
+				
+				iteratorForUpdate.add(personAdd);
 				iteratorForUpdate.commit();
-				System.out.println(Thread.currentThread().getName() + " commited");
+				System.out.println(Thread.currentThread().getName() + " committed");
 			}
 
 		}
@@ -76,14 +83,14 @@ public class Main_List2 {
 
 	static class Runnable2 implements Runnable {
 		
-		TransactionalTable<Person> dbList;
-		Runnable2(TransactionalTable<Person> dbList) {
-			this.dbList = dbList;
+		TransactionalTable<Person> transactionalTable;
+		Runnable2(TransactionalTable<Person> transactionalTable) {
+			this.transactionalTable = transactionalTable;
 		}
 		
 		public void run() {
 
-			ReadWriteCursor<Person> iteratorForUpdate = dbList.createReadWriteCursor();
+			ReadWriteCursor<Person> iteratorForUpdate = transactionalTable.createReadWriteCursor();
 			if ( iteratorForUpdate.next() ) {
 				System.out.println(Thread.currentThread().getName() + " Is processing");
 				Person person = iteratorForUpdate.get();

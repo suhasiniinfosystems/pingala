@@ -3,9 +3,9 @@ package collection.db.test;
 import java.util.ArrayList;
 import java.util.List;
 
-import collection.db.DbList;
-import collection.db.DbList.ReadCursor;
-import collection.db.DbList.UpdatableCursor;
+import collection.db.TransactionalTable;
+import collection.db.TransactionalTable.ReadWriteCursor;
+import collection.db.TransactionalTable.SnapshotCursor;
 
 public class Main_List {
 
@@ -27,9 +27,9 @@ public class Main_List {
 		person2.setAge(33);
 		personList.add(person2);
 
-		DbList<Person> dbList = new DbList<Person>(personList);
-
-		ReadCursor<Person> iteratorForRead = dbList.createReadCursor();
+		TransactionalTable<Person> transactionalTable = new TransactionalTable<>(personList);
+		
+		SnapshotCursor<Person> iteratorForRead = transactionalTable.createSnapshotCursor();
 		while ( iteratorForRead.next() ) {
 			Person person = iteratorForRead.get();
 			System.out.println(person);
@@ -37,7 +37,7 @@ public class Main_List {
 
 		System.out.println("------------- init done --------------");
 		
-		UpdatableCursor<Person> iteratorForUpdate = dbList.createUpdatableCursor();
+		ReadWriteCursor<Person> iteratorForUpdate = transactionalTable.createReadWriteCursor();
 		while ( iteratorForUpdate.next() ) {
 			Person person = iteratorForUpdate.get();
 			person.setAge(person.getAge() - 10);
@@ -46,13 +46,13 @@ public class Main_List {
 		iteratorForUpdate.commit();
 		
 		System.out.println("------------- update done --------------");
-		iteratorForRead = dbList.createReadCursor();
+		iteratorForRead = transactionalTable.createSnapshotCursor();
 		while ( iteratorForRead.next() ) {
 			Person person = iteratorForRead.get();
 			System.out.println(person);
 		}
 		System.out.println("------------- dump all --------------");
-		dbList.dump();
+		transactionalTable.dump();
 	}
 
 }
