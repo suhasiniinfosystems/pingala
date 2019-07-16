@@ -6,7 +6,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import collection.db.DbList.VersionContainer;
 
-class CommitManager<V extends Copy<V>> {
+class CommitManager<V> {
 	
 	
 	private static final AtomicLong commitRunningNumber = new AtomicLong(0L);
@@ -14,7 +14,9 @@ class CommitManager<V extends Copy<V>> {
 	private final ConcurrentLinkedDeque<VersionContainer> versionDeque = new ConcurrentLinkedDeque<VersionContainer>();
 
 	public VersionContainer getLatestVersionContainer() {
-		return versionDeque.getLast();
+		VersionContainer versionContainer = new VersionContainer();
+		versionContainer.setValue(versionDeque.getLast().getValue());
+		return versionContainer;
 	}
 
 	public VersionContainer commit(CommitBatch commitBatch) {

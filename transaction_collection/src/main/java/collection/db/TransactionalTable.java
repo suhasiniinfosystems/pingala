@@ -8,15 +8,16 @@ import java.util.concurrent.atomic.AtomicLong;
 import collection.db.DbList.Item;
 import collection.db.DbList.ReadCursor;
 import collection.db.DbList.UpdatableCursor;
+import collection.db.DbList.UpdatableCursor.InsertItem;
 import collection.db.DbList.UpdatableCursor.UpdateItem;
 import collection.db.DbList.VersionContainer;
 
-public class TransactionalTable<V extends Copy<V>> {
+public class TransactionalTable<V> {
 	
-	static class Util<V extends Copy<V>> {
+	static class Util<V> {
 
-		public void commit(Collection<V> adds, List<UpdateItem<V>> updatedItems, long tranId, DbList<V> dbList, CommitManager commitManager) {
-			CommitList commitList = new  CommitList(dbList, adds, updatedItems);
+		public void commit(Collection<InsertItem<V>> insertedItems, List<UpdateItem<V>> updatedItems, long tranId, DbList<V> dbList, CommitManager commitManager) {
+			CommitList commitList = new  CommitList(dbList, insertedItems, updatedItems);
 			List<CommitList> commitListColl = new ArrayList<CommitList>();
 			commitListColl.add(commitList);
 			CommitBatch commitBatch = new CommitBatch(commitListColl);
@@ -24,14 +25,34 @@ public class TransactionalTable<V extends Copy<V>> {
 			if ( updatedItems != null ) {
 				for (UpdateItem<V> updateItem : updatedItems) {
 					Item<V> currentItem = updateItem.getCurrentItem();
+					List<Object> keyValueList = updateItem.getRecordUniqueLockInfo().getValueList();
+					List<UniqueLock> uniqueLockList = updateItem.getRecordUniqueLockInfo().getUniqueLockList();
+					for (int i = 0; i < uniqueLockList.size(); i++) {
+						UniqueLock uniqueLock = uniqueLockList.get(i);
+						Object keyValue = keyValueList.get(i);
+						uniqueLock.release(keyValue, false);
+					}
 					currentItem.unlockAfterUpdate(tranId, commitId);
 				}
 			}
+			if ( insertedItems != null ) {
+				for (InsertItem<V> insertedItem : insertedItems) {
+					V value = insertedItem.getValue();
+					List<Object> keyValueList = insertedItem.getRecordUniqueLockInfo().getValueList();
+					List<UniqueLock> uniqueLockList = insertedItem.getRecordUniqueLockInfo().getUniqueLockList();
+					for (int i = 0; i < uniqueLockList.size(); i++) {
+						UniqueLock uniqueLock = uniqueLockList.get(i);
+						Object keyValue = keyValueList.get(i);
+						uniqueLock.release(keyValue, false);
+					}
+				}
+			}
+			
 		}
 		
 	}
 	
-	public static class SnapshotCursor<V extends Copy<V>> {
+	public static class SnapshotCursor<V> {
 
 		ReadCursor<V> readCursor;
 		
@@ -52,10 +73,8 @@ public class TransactionalTable<V extends Copy<V>> {
 		}
 		
 	}
-
 	
-	
-	public static class ReadWriteCursor<V extends Copy<V>> {
+	public static class ReadWriteCursor<V> {
 
 		private final UpdatableCursor<V> updatableCursor;
 		private final DbList<V> dbList;
@@ -69,8 +88,8 @@ public class TransactionalTable<V extends Copy<V>> {
 			this.tranId = tranId;
 		}
 
-		public void add(V value) {
-			updatableCursor.add(value);
+		public void insert(V value) throws DuplicateKeysExistsException {
+			updatableCursor.insert(value);
 		}
 
 		public void printNode() {
@@ -81,7 +100,8 @@ public class TransactionalTable<V extends Copy<V>> {
 			return updatableCursor.get();
 		}
 
-		public void update(V updatedValue) {
+		public void update(V updatedValue) throws DuplicateKeysExistsException {
+			
 			updatableCursor.update(updatedValue);
 
 		}
@@ -92,9 +112,9 @@ public class TransactionalTable<V extends Copy<V>> {
 
 		public void commit() {
 			List<UpdateItem<V>> updatedItems = updatableCursor.getUpdatedItems();
-			List<V> adds = updatableCursor.getAddedItems();
+			List<InsertItem<V>> insertedItesm = updatableCursor.getInsertedItems();
 			Util util = new Util();
-			util.commit(adds, updatedItems, tranId, dbList, commitManager);
+			util.commit(insertedItesm, updatedItems, tranId, dbList, commitManager);
 		}
 		
 		public void rollback() {
@@ -110,12 +130,25 @@ public class TransactionalTable<V extends Copy<V>> {
 	private final DbList<V> dbList;
 	private final CommitManager commitManager = new CommitManager();
 	private final AtomicLong nextTranId = new AtomicLong(0);
+	private final List<PrimaryKey<?, V>> primaryKeysProvider;
+	private final Copy<V> copier;
 	
-	public TransactionalTable(Collection<V> coll) {
-		dbList = new DbList<V>();
+	public TransactionalTable(Copy<V> copier, Collection<V> coll, List<PrimaryKey<?, V>> primaryKeysProvider) throws DuplicateKeysExistsException {
+		dbList = new DbList<V>(primaryKeysProvider);
 		long tranId = nextTranId.incrementAndGet();
+		
+		List<InsertItem<V>> insertdList = new ArrayList<InsertItem<V>>();
+		
+		for (V value : coll) {
+			RecordUniqueLockInfo recordUniqueLockInfo = dbList.primaryKeyCheck(value, tranId);
+			InsertItem<V> insertedItem = new InsertItem<V>(value, recordUniqueLockInfo);
+			insertdList.add(insertedItem);
+		}
+		
 		Util<V> util = new Util<V>();
-		util.commit(coll, null, tranId, dbList, commitManager);
+		util.commit(insertdList, null, tranId, dbList, commitManager);
+		this.primaryKeysProvider = primaryKeysProvider;
+		this.copier = copier;
 	}
 
 	public void dump() {
@@ -129,7 +162,8 @@ public class TransactionalTable<V extends Copy<V>> {
 	public ReadWriteCursor<V> createReadWriteCursor(RowFilter<V> rowFilter) {
 		long tranId = nextTranId.incrementAndGet();
 		VersionContainer snapshotVersion = commitManager.getLatestVersionContainer();
-		UpdatableCursor<V> updatableCursor = new UpdatableCursor<>(dbList, rowFilter, tranId, snapshotVersion);
+		UpdatableCursor<V> updatableCursor = new UpdatableCursor<>(dbList, rowFilter, tranId, snapshotVersion, copier);
+		
 		return new ReadWriteCursor<V>(updatableCursor, commitManager, dbList, tranId, snapshotVersion);
 	}
 
@@ -139,7 +173,7 @@ public class TransactionalTable<V extends Copy<V>> {
 
 	public SnapshotCursor<V> createSnapshotCursor(RowFilter<V> rowFilter) {
 		VersionContainer snapshotVersion = commitManager.getLatestVersionContainer();
-		ReadCursor<V> readCursor = new ReadCursor<V>(dbList.getListQueue().getHead(), rowFilter, snapshotVersion.getValue());
+		ReadCursor<V> readCursor = new ReadCursor<V>(dbList.getListQueue().getHead(), rowFilter, snapshotVersion.getValue(), copier);
 		SnapshotCursor<V> snapshotCursor = new SnapshotCursor<>(readCursor);
 		return snapshotCursor;
 	}

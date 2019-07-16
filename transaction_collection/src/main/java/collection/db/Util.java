@@ -8,7 +8,7 @@ import collection.db.DbList.Item;
 import collection.db.DbList.VersionContainer;
 import collection.db.DbList.UpdatableCursor.UpdateItem;
 
-public class Util<V extends Copy<V>> {
+public class Util<V> {
 
 	public void commit(Collection<V> adds, List<UpdateItem<V>> updatedItems, long tranId, DbList<V> dbList, CommitManager commitManager) {
 		CommitList commitList = new  CommitList(dbList, adds, updatedItems);

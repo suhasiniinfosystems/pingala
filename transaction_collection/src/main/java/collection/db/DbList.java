@@ -1,23 +1,26 @@
 package collection.db;
 
 import java.util.ArrayList;
-import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicLong;
 
 
-class DbList<V extends Copy<V>> {
+class DbList<V> {
 	
-	static class ReadCursor<V extends Copy<V>> {
+	static class ReadCursor<V> {
 
 		private ItemNode<V> mNode;
 		private final long snapshotVersion;
 		private final RowFilter<V> rowFilter;
+		private final Copy<V> copier;
 		
-		public ReadCursor(ItemNode<V> head, RowFilter<V> rowFilter, long snapshotVersion) {
+		public ReadCursor(ItemNode<V> head, RowFilter<V> rowFilter, long snapshotVersion, Copy<V> copier) {
 			this.mNode = head;
 			this.rowFilter = rowFilter;
 			this.snapshotVersion = snapshotVersion;
+			this.copier = copier;
 		}
 
 		public void printNode() {
@@ -74,50 +77,80 @@ class DbList<V extends Copy<V>> {
 		
 		public V get() {
 			V value = mNode.getItem().getValue();
-			V copy = value.copy();
+			V copy = copier.copy(value);
 			return copy;
 		}
 		
 	}
 	
-	static class UpdatableCursor<V extends Copy<V>> {
+	static class UpdatableCursor<V> {
 
 		static public class UpdateItem<V> {
 			private Item<V> currentItem;
 			private V nextValue;
-			public UpdateItem(Item<V> currentItem, V nextValue) {
+			private RecordUniqueLockInfo recordUniqueLockInfo;
+			
+			public UpdateItem(Item<V> currentItem, V nextValue, RecordUniqueLockInfo recordUniqueLockInfo) {
 				this.currentItem = currentItem;
 				this.nextValue = nextValue;
+				this.recordUniqueLockInfo = recordUniqueLockInfo;
 			}
 			public Item<V> getCurrentItem() {
 				return currentItem;
 			}
+			
+			public RecordUniqueLockInfo getRecordUniqueLockInfo() {
+				return recordUniqueLockInfo;
+			}	
+
 			public V getNextValue() {
 				return nextValue;
 			}
 		}
 
-		//private final DbList<V> dbList;
+		static public class InsertItem<V> {
+			private V value;
+			private RecordUniqueLockInfo recordUniqueLockInfo;
+			
+			public InsertItem(V value, RecordUniqueLockInfo recordUniqueLockInfo) {
+				this.value = value;
+				this.recordUniqueLockInfo = recordUniqueLockInfo;
+			}
+
+			public RecordUniqueLockInfo getRecordUniqueLockInfo() {
+				return recordUniqueLockInfo;
+			}	
+
+			public V getValue() {
+				return value;
+			}
+		}
+
+		private final DbList<V> dbList;
 		private ItemNode<V> mNode;
 		private V copy;
 		
 		private List<UpdateItem<V>> updates = new ArrayList<UpdateItem<V>>();
-		private List<V> adds = new ArrayList<V>();
+		private List<InsertItem<V>> adds = new ArrayList<InsertItem<V>>();
 		
 		private VersionContainer snapshotVersion;
 		private final long tranId;
 		private final RowFilter<V> rowFilter;
+		private final Copy<V> copier;
 		
-		public UpdatableCursor(DbList<V> dbList,RowFilter<V> rowFilter, long tranId, VersionContainer snapshotVersion) {
-			//this.dbList = dbList;
+		public UpdatableCursor(DbList<V> dbList, RowFilter<V> rowFilter, long tranId, VersionContainer snapshotVersion, Copy<V> copier) {
+			this.dbList = dbList;
 			this.mNode = dbList.getListQueue().getHead();
 			this.tranId = tranId;
 			this.snapshotVersion = snapshotVersion;
 			this.rowFilter = rowFilter;
+			this.copier = copier;
 		}
 
-		public void add(V value) {
-			adds.add(value);
+		public void insert(V value) throws DuplicateKeysExistsException {
+			RecordUniqueLockInfo recordUniqueLockInfo = dbList.primaryKeyCheck(value, tranId);
+			InsertItem<V> insertItem = new InsertItem<V>(value, recordUniqueLockInfo);
+			adds.add(insertItem);
 		}
 
 		public void printNode() {
@@ -128,17 +161,20 @@ class DbList<V extends Copy<V>> {
 		
 		public V get() {
 			V value = mNode.getItem().getValue();
-			copy = value.copy();
+			copy = copier.copy(value);
 			return copy;
 		}
 
-		public void update(V updatedValue) {
+		public void update(V updatedValue) throws DuplicateKeysExistsException {
+			// Primary key check 
+			RecordUniqueLockInfo recordUniqueLockInfo = dbList.primaryKeyCheck(updatedValue, tranId);
+			
 			ItemNode<V> node = mNode;
 			if ( node == null || mNode.getItem() == null ) {
 				throw new RuntimeException("Invalid update request");
 			} 	
 			Item<V> item = mNode.getItem();
-			UpdateItem<V> updateItem = new UpdateItem<V>(item, updatedValue);
+			UpdateItem<V> updateItem = new UpdateItem<V>(item, updatedValue, recordUniqueLockInfo);
 			updates.add(updateItem);
 		}
 		
@@ -168,7 +204,7 @@ class DbList<V extends Copy<V>> {
 			return updates;
 		}
 
-		List<V> getAddedItems() {
+		List<InsertItem<V>> getInsertedItems() {
 			return adds;
 		}
 
@@ -381,31 +417,55 @@ class DbList<V extends Copy<V>> {
 
 	private final ListQueue<V> listQueue = new ListQueue<V>();
 
-	public DbList() {
+	private final List<PrimaryKey<?, V>> primaryKeysProvider;
+
+	private final List<String> uniqueKeys = new ArrayList<String>();
+
+	private final List<UniqueLock> uniqueLocks = new ArrayList<UniqueLock>();
+
+	public DbList(List<PrimaryKey<?, V>> primaryKeysProvider) {
+		this.primaryKeysProvider = primaryKeysProvider;
+		for (PrimaryKey<?, V> primaryKey : primaryKeysProvider) {
+			System.out.println("Primary keys : " + primaryKey.getKeyName());
+			UniqueLock uniqueLock = new UniqueLock();
+			uniqueLocks.add(uniqueLock);
+			uniqueKeys.add(primaryKey.getKeyName());
+		}
 	}
 	
 	ListQueue<V> getListQueue() {
 		return listQueue;
 	}
 	
+	public RecordUniqueLockInfo primaryKeyCheck(V value, Long tranId) throws DuplicateKeysExistsException {
+		List<Object> keyValues = new ArrayList<Object>();
+		for (PrimaryKey<?, V> primaryKey : primaryKeysProvider) {
+			Object keyValue = primaryKey.getKeyValue(value);
+			keyValues.add(keyValue);		
+		}
+		RecordUniqueLockInfo recordUniqueLockInfo = UniqueLock.lockForUniqueKey(tranId, uniqueKeys, keyValues, uniqueLocks);
+		return recordUniqueLockInfo;
+		
+	}
+	
 	long nextRowId() {
 		return nextRowId.incrementAndGet();
 	}
 
-	public UpdatableCursor<V> createUpdatableCursor(long tranId, VersionContainer snapshotVersion) {
-		return createUpdatableCursor(null,tranId, snapshotVersion);
+	public UpdatableCursor<V> createUpdatableCursor(long tranId, VersionContainer snapshotVersion, Copy<V> copier) {
+		return createUpdatableCursor(null,tranId, snapshotVersion, copier);
 	}
 
-	public UpdatableCursor<V> createUpdatableCursor(RowFilter<V> rowFilter, long tranId, VersionContainer snapshotVersion) {
-		return new UpdatableCursor<V>(this, rowFilter, tranId, snapshotVersion);
+	public UpdatableCursor<V> createUpdatableCursor(RowFilter<V> rowFilter, long tranId, VersionContainer snapshotVersion, Copy<V> copier) {
+		return new UpdatableCursor<V>(this, rowFilter, tranId, snapshotVersion, copier);
 	}
 
-	public ReadCursor<V> createReadCursor(long snapshotVersion) {
-		return createReadCursor(null, snapshotVersion);
+	public ReadCursor<V> createReadCursor(long snapshotVersion, Copy<V> copier) {
+		return createReadCursor(null, snapshotVersion, copier);
 	}
 
-	public ReadCursor<V> createReadCursor(RowFilter<V> rowFilter, long snapshotVersion) {
-		return new ReadCursor<V>(listQueue.getHead(), rowFilter, snapshotVersion);
+	public ReadCursor<V> createReadCursor(RowFilter<V> rowFilter, long snapshotVersion, Copy<V> copier) {
+		return new ReadCursor<V>(listQueue.getHead(), rowFilter, snapshotVersion, copier);
 	}
 
 

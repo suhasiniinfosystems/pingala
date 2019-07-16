@@ -5,17 +5,18 @@ import java.util.List;
 
 import collection.db.DbList.Item;
 import collection.db.DbList.ListQueue;
+import collection.db.DbList.UpdatableCursor.InsertItem;
 import collection.db.DbList.UpdatableCursor.UpdateItem;
 import collection.db.DbList.VersionContainer;
 
-class CommitList<V extends Copy<V>> {
+class CommitList<V> {
 
 	private final DbList<V> dbList;
-	private final Collection<V> addItems;
+	private final Collection<InsertItem<V>> addItems;
 	private final List<UpdateItem<V>> updateItems;
 	private final ListQueue<V> newListQueue = new ListQueue<V>();
 	
-	public CommitList(DbList<V> dbList, Collection<V> addItems, List<UpdateItem<V>> updateItems) {
+	public CommitList(DbList<V> dbList, Collection<InsertItem<V>> addItems, List<UpdateItem<V>> updateItems) {
 		this.dbList = dbList;
 		this.addItems = addItems;
 		this.updateItems = updateItems;
@@ -53,8 +54,9 @@ class CommitList<V extends Copy<V>> {
 		}
 	}
 
-	private void addToQueue(Collection<V> values, VersionContainer commitID, ListQueue<V> newListQueue) {
-		for (V value : values) {
+	private void addToQueue(Collection<InsertItem<V>> values, VersionContainer commitID, ListQueue<V> newListQueue) {
+		for (InsertItem<V> insertItem : values) {
+			V value = insertItem.getValue();
 			long rowId = dbList.nextRowId();
 			Item<V> item = new Item<V>(rowId, value, commitID);
 			newListQueue.add(item);

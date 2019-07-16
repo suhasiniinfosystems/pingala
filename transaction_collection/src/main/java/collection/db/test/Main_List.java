@@ -3,7 +3,10 @@ package collection.db.test;
 import java.util.ArrayList;
 import java.util.List;
 
-import collection.db.TransactionalTable;
+import collection.db.Copy;
+import collection.db.PKOne;
+import collection.db.TransactionTableNoKey;
+import collection.db.TransactionTableOneKey;
 import collection.db.TransactionalTable.ReadWriteCursor;
 import collection.db.TransactionalTable.SnapshotCursor;
 
@@ -27,8 +30,11 @@ public class Main_List {
 		person2.setAge(33);
 		personList.add(person2);
 
-		TransactionalTable<Person> transactionalTable = new TransactionalTable<>(personList);
+		PKOne<String, Person> pkOne = new PKOneImpl();
+		Copy<Person> personCopier = new PersonCopier();
 		
+		TransactionTableNoKey<Person> transactionalTable = new TransactionTableNoKey<Person>(personCopier, personList);
+
 		SnapshotCursor<Person> iteratorForRead = transactionalTable.createSnapshotCursor();
 		while ( iteratorForRead.next() ) {
 			Person person = iteratorForRead.get();
