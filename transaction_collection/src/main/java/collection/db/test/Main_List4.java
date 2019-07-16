@@ -3,6 +3,8 @@ package collection.db.test;
 import java.util.ArrayList;
 import java.util.List;
 
+import collection.db.Copy;
+import collection.db.TransactionTableNoKey;
 import collection.db.TransactionalTable;
 import collection.db.TransactionalTable.ReadWriteCursor;
 import collection.db.TransactionalTable.SnapshotCursor;
@@ -31,7 +33,8 @@ public class Main_List4 {
 		person2.setAge(33);
 		//personList.add(person2);
 
-		TransactionalTable<Person> transactionalTable = new TransactionalTable<Person>(personList);
+		Copy<Person> personCopier = new PersonCopier();
+		TransactionTableNoKey<Person> transactionalTable = new TransactionTableNoKey<Person>(personCopier, personList);
 
 		
 		SnapshotCursor<Person> iteratorForRead = transactionalTable.createSnapshotCursor();
@@ -59,8 +62,8 @@ public class Main_List4 {
 	
 	static class Runnable1 implements Runnable {
 		
-		TransactionalTable<Person> transactionalTable;		
-		Runnable1(TransactionalTable<Person> transactionalTable) {
+		TransactionTableNoKey<Person> transactionalTable;		
+		Runnable1(TransactionTableNoKey<Person> transactionalTable) {
 			this.transactionalTable = transactionalTable;
 		}
 		
@@ -71,14 +74,16 @@ public class Main_List4 {
 				Person person = iteratorForUpdate.get();
 				try {
 					Thread.sleep(2000);
-				} catch (Exception e) {}
-				person.setAge(person.getAge() - 10);
-				iteratorForUpdate.update(person);
+					person.setAge(person.getAge() - 10);
+					iteratorForUpdate.update(person);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				try {
 					Thread.sleep(2000);
+					iteratorForUpdate.rollback();
+					System.out.println(Thread.currentThread().getName() + " commited");
 				} catch (Exception e) {}
-				iteratorForUpdate.rollback();
-				System.out.println(Thread.currentThread().getName() + " commited");
 			}
 
 		}
@@ -87,8 +92,8 @@ public class Main_List4 {
 
 	static class Runnable2 implements Runnable {
 		
-		TransactionalTable<Person> transactionalTable;
-		Runnable2(TransactionalTable<Person> transactionalTable) {
+		TransactionTableNoKey<Person> transactionalTable;
+		Runnable2(TransactionTableNoKey<Person> transactionalTable) {
 			this.transactionalTable = transactionalTable;
 		}
 		

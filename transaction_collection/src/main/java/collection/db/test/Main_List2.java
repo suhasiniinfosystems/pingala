@@ -3,6 +3,8 @@ package collection.db.test;
 import java.util.ArrayList;
 import java.util.List;
 
+import collection.db.Copy;
+import collection.db.TransactionTableNoKey;
 import collection.db.TransactionalTable;
 import collection.db.TransactionalTable.ReadWriteCursor;
 import collection.db.TransactionalTable.SnapshotCursor;
@@ -21,7 +23,8 @@ public class Main_List2 {
 		person0.setAge(50);
 		personList.add(person0);
 
-		TransactionalTable<Person> dbList = new TransactionalTable<Person>(personList);
+		Copy<Person> personCopier = new PersonCopier();
+		TransactionTableNoKey<Person> dbList = new TransactionTableNoKey<Person>(personCopier, personList);
 		
 		SnapshotCursor<Person> iteratorForRead = dbList.createSnapshotCursor();
 		while ( iteratorForRead.next() ) {
@@ -47,8 +50,8 @@ public class Main_List2 {
 	
 	static class Runnable1 implements Runnable {
 		
-		TransactionalTable<Person> dbList;		
-		Runnable1(TransactionalTable<Person> dbList) {
+		TransactionTableNoKey<Person> dbList;		
+		Runnable1(TransactionTableNoKey<Person> dbList) {
 			this.dbList = dbList;
 		}
 		
@@ -60,9 +63,11 @@ public class Main_List2 {
 				Person person = iteratorForUpdate.get();
 				try {
 					Thread.sleep(2000);
-				} catch (Exception e) {}
-				person.setAge(person.getAge() - 8);
-				iteratorForUpdate.update(person);
+					person.setAge(person.getAge() - 8);
+					iteratorForUpdate.update(person);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				try {
 					Thread.sleep(2000);
 				} catch (Exception e) {}
@@ -76,8 +81,8 @@ public class Main_List2 {
 
 	static class Runnable2 implements Runnable {
 		
-		TransactionalTable<Person> dbList;
-		Runnable2(TransactionalTable<Person> dbList) {
+		TransactionTableNoKey<Person> dbList;
+		Runnable2(TransactionTableNoKey<Person> dbList) {
 			this.dbList = dbList;
 		}
 		
@@ -89,9 +94,11 @@ public class Main_List2 {
 				Person person = iteratorForUpdate.get();
 				try {
 					Thread.sleep(2000);
-				} catch (Exception e) {}
-				person.setAge(person.getAge() - 9);
-				iteratorForUpdate.update(person);
+					person.setAge(person.getAge() - 9);
+					iteratorForUpdate.update(person);
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				try {
 					Thread.sleep(2000);
 				} catch (Exception e) {}

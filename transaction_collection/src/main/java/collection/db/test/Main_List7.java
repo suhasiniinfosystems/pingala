@@ -9,7 +9,7 @@ import collection.db.TransactionalTable;
 import collection.db.TransactionalTable.ReadWriteCursor;
 import collection.db.TransactionalTable.SnapshotCursor;
 
-public class Main_List6 {
+public class Main_List7 {
 
 	/*
 	 * Test two writes against the same record...
@@ -66,7 +66,9 @@ public class Main_List6 {
 					Thread.sleep(2000);
 					person.setAge(person.getAge() - 8);
 					iteratorForUpdate.update(person);
-				} catch (Exception e) {}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				try {
 					Thread.sleep(2000);
 					Person personAdd = new Person();
@@ -76,7 +78,9 @@ public class Main_List6 {
 					iteratorForUpdate.insert(personAdd);
 					iteratorForUpdate.commit();
 					System.out.println(Thread.currentThread().getName() + " committed");
-				} catch (Exception e) {}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				
 			}
 
@@ -101,12 +105,21 @@ public class Main_List6 {
 					Thread.sleep(2000);
 					person.setAge(person.getAge() - 9);
 					iteratorForUpdate.update(person);
-				} catch (Exception e) {}
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 				try {
 					Thread.sleep(2000);
-				} catch (Exception e) {}
-				iteratorForUpdate.commit();
-				System.out.println(Thread.currentThread().getName() + " commited");
+					Person personAdd = new Person();
+					personAdd.setName("Amar");
+					personAdd.setAge(43);
+					
+					iteratorForUpdate.insert(personAdd);
+					iteratorForUpdate.commit();
+					System.out.println(Thread.currentThread().getName() + " commited");
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
 			}
 
 		}
